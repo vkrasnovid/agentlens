@@ -6,7 +6,8 @@ import Link from 'next/link';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-function formatDuration(seconds: number): string {
+function formatDuration(ms: number): string {
+  const seconds = Math.round(ms / 1000);
   if (seconds < 60) return `${seconds}s`;
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
@@ -181,7 +182,7 @@ export default function SessionsPage() {
                       {formatDate(session.created_at)}
                     </p>
                     <p className="text-gray-600 text-xs font-sans mt-0.5">
-                      {formatDuration(session.duration_seconds)}
+                      {formatDuration(session.duration_ms ?? (session.duration_seconds ?? 0) * 1000)}
                     </p>
                   </div>
                 </div>

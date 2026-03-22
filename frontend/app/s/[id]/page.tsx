@@ -206,9 +206,11 @@ export default function SessionPage() {
             <div className="bg-[#13131a] border border-white/10 rounded-xl p-4">
               <p className="text-gray-600 text-xs font-sans mb-1">Duration</p>
               <p className="text-white text-sm font-bold">
-                {data.metadata.duration_seconds < 60
-                  ? `${data.metadata.duration_seconds}s`
-                  : `${Math.floor(data.metadata.duration_seconds / 60)}m ${data.metadata.duration_seconds % 60}s`}
+                {(() => {
+                  const ms = data.metadata.duration_ms ?? (data.metadata.duration_seconds ?? 0) * 1000;
+                  const s = Math.round(ms / 1000);
+                  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+                })()}
               </p>
             </div>
             <div className="bg-[#13131a] border border-white/10 rounded-xl p-4">

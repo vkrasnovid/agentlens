@@ -31,7 +31,8 @@ export interface SessionSummary {
   total_cost_usd: number;
   event_count: number;
   model_used: string;
-  duration_seconds: number;
+  duration_ms: number;
+  duration_seconds?: number; // deprecated alias kept for compat
   total_input_tokens?: number;
   total_output_tokens?: number;
   total_api_requests?: number;

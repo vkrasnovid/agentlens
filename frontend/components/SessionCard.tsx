@@ -18,8 +18,10 @@ function formatDate(iso: string) {
   });
 }
 
-function formatDuration(seconds: number) {
-  if (seconds < 60) return `${Math.round(seconds)}s`;
+function formatDuration(ms?: number) {
+  if (!ms) return '0s';
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
   const m = Math.floor(seconds / 60);
   const s = Math.round(seconds % 60);
   return `${m}m ${s}s`;
@@ -46,7 +48,7 @@ export default function SessionCard({ session }: SessionCardProps) {
           <span className="text-gray-600">·</span>
           <span className="font-mono text-blue-400">{session.model_used || 'unknown model'}</span>
           <span className="text-gray-600">·</span>
-          <span>{formatDuration(session.duration_seconds)}</span>
+          <span>{formatDuration(session.duration_ms ?? (session.duration_seconds ?? 0) * 1000)}</span>
         </div>
 
         <TokenBar inputTokens={inputTokens} outputTokens={outputTokens} className="mb-3" />

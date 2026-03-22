@@ -343,14 +343,9 @@ async def upload_session(file: UploadFile = File(...)):
         )
 
     # Generate session ID (use from events if present, else new UUID)
-    session_id = None
-    for e in events:
-        sid = e.get("session_id")
-        if sid:
-            session_id = sid
-            break
-    if not session_id:
-        session_id = str(uuid.uuid4())
+    # Always generate fresh UUID — do NOT trust attacker-controlled session_id from JSONL
+    # (path traversal prevention: issue #1 from code review)
+    session_id = str(uuid.uuid4())
 
     # Save JSONL file
     jsonl_path = SESSIONS_DIR / f"{session_id}.jsonl"
