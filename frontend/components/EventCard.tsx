@@ -20,7 +20,8 @@ const EVENT_CONFIG: Record<EventType, { label: string; color: string; dot: strin
   message:       { label: 'Message',         color: 'bg-gray-800 text-gray-300 border border-gray-700',           dot: 'bg-gray-500' },
 };
 
-function formatTime(iso: string) {
+function formatTime(iso: string | undefined) {
+  if (!iso) return '—';
   try {
     const d = new Date(iso);
     return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
