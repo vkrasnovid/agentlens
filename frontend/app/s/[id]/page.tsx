@@ -1,202 +1,273 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useParams } from 'next/navigation';
+import type { SessionDetail, SessionEvent } from '@/types/agentlens';
 import Link from 'next/link';
-import { SessionDetail, SessionEvent } from '@/types/agentlens';
-import EventCard from '@/components/EventCard';
-import LoadingSkeleton from '@/components/LoadingSkeleton';
-import CostBadge from '@/components/CostBadge';
-import { use } from 'react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-interface PageProps {
-  params: Promise<{ id: string }>;
-}
+const badgeConfig: Record<string, { label: string; className: string }> = {
+  session_start: { label: 'SESSION START', className: 'bg-purple-900/60 text-purple-300 border border-purple-700' },
+  session_end:   { label: 'SESSION END',   className: 'bg-purple-900/60 text-purple-300 border border-purple-700' },
+  api_request:   { label: 'API REQUEST',   className: 'bg-blue-900/60 text-blue-300 border border-blue-700' },
+  api_response:  { label: 'API RESPONSE',  className: 'bg-green-900/60 text-green-300 border border-green-700' },
+  tool_call:     { label: 'TOOL CALL',     className: 'bg-amber-900/60 text-amber-300 border border-amber-700' },
+  tool_result:   { label: 'TOOL RESULT',   className: 'bg-teal-900/60 text-teal-300 border border-teal-700' },
+  error:         { label: 'ERROR',         className: 'bg-red-900/60 text-red-300 border border-red-700' },
+  message:       { label: 'MESSAGE',       className: 'bg-gray-800 text-gray-300 border border-gray-600' },
+};
 
-function ShareButton({ sessionId }: { sessionId: string }) {
-  const [copied, setCopied] = useState(false);
+function EventRow({ event, index }: { event: SessionEvent; index: number }) {
+  const [expanded, setExpanded] = useState(false);
+  const badge = badgeConfig[event.type] ?? { label: event.type.toUpperCase(), className: 'bg-gray-800 text-gray-300 border border-gray-600' };
 
-  const handleShare = useCallback(() => {
-    const url = typeof window !== 'undefined' ? window.location.href : `${API_URL}/s/${sessionId}`;
-    navigator.clipboard.writeText(url).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  }, [sessionId]);
+  const timeStr = event.timestamp
+    ? new Date(event.timestamp).toLocaleTimeString(undefined, { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 })
+    : `+${index}`;
+
+  // Build a clean display object (exclude verbose fields shown inline)
+  const detailData: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(event)) {
+    if (!['type', 'timestamp', 'content_preview'].includes(k) && v !== undefined) {
+      detailData[k] = v;
+    }
+  }
 
   return (
-    <button
-      onClick={handleShare}
-      className="flex items-center gap-2 bg-[#12121a] hover:bg-[#1a1a2e] border border-gray-700 text-gray-300 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+    <div
+      className={`border-b border-white/5 last:border-0 transition-colors ${expanded ? 'bg-white/[0.03]' : 'hover:bg-white/[0.02]'}`}
     >
-      {copied ? (
-        <>
-          <span className="text-[#00c853]">✓</span>
-          <span className="text-[#00c853]">Copied!</span>
-        </>
-      ) : (
-        <>
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-          </svg>
-          Share
-        </>
+      <button
+        className="w-full text-left px-6 py-3 flex items-start gap-3 cursor-pointer"
+        onClick={() => setExpanded(!expanded)}
+      >
+        {/* Time */}
+        <span className="text-gray-600 text-xs mt-0.5 w-28 shrink-0 font-mono">
+          {timeStr}
+        </span>
+
+        {/* Badge */}
+        <span className={`event-badge shrink-0 ${badge.className}`}>
+          {badge.label}
+        </span>
+
+        {/* Content preview */}
+        <span className="text-gray-400 text-sm flex-1 truncate font-sans text-left">
+          {event.tool_name && (
+            <span className="text-[#ffab40] mr-2 font-mono">{event.tool_name}</span>
+          )}
+          {event.model && (
+            <span className="text-gray-600 mr-2 text-xs">[{event.model}]</span>
+          )}
+          {event.content_preview || event.error || ''}
+        </span>
+
+        {/* Right-side stats */}
+        <div className="flex items-center gap-3 shrink-0">
+          {event.cost_usd != null && (
+            <span className="text-[#00c853] text-xs font-mono">
+              ${event.cost_usd.toFixed(5)}
+            </span>
+          )}
+          {event.total_tokens != null && (
+            <span className="text-gray-600 text-xs font-mono">
+              {event.total_tokens.toLocaleString()}t
+            </span>
+          )}
+          {event.input_tokens != null && event.output_tokens == null && (
+            <span className="text-gray-600 text-xs font-mono">
+              {event.input_tokens.toLocaleString()}t in
+            </span>
+          )}
+          {event.output_tokens != null && (
+            <span className="text-gray-600 text-xs font-mono">
+              {event.output_tokens.toLocaleString()}t out
+            </span>
+          )}
+          <span className={`text-gray-600 text-xs transition-transform ${expanded ? 'rotate-90' : ''}`}>
+            ▶
+          </span>
+        </div>
+      </button>
+
+      {/* Expanded JSON */}
+      {expanded && (
+        <div className="px-6 pb-4">
+          <pre className="bg-[#0a0a0f] border border-white/10 rounded-lg p-4 text-xs text-gray-300 overflow-x-auto font-mono leading-relaxed">
+            {JSON.stringify(detailData, null, 2)}
+          </pre>
+        </div>
       )}
-    </button>
+    </div>
   );
 }
 
-function getTotalCost(events: SessionEvent[]): number {
-  const endEvent = events.find(e => e.type === 'session_end');
-  if (endEvent?.total_cost_usd != null) return endEvent.total_cost_usd as number;
-  return events.reduce((sum, e) => {
-    const cost = (e.cost_usd as number) ?? 0;
-    return sum + cost;
-  }, 0);
-}
+export default function SessionPage() {
+  const params = useParams();
+  const id = params?.id as string;
 
-function getSessionModel(events: SessionEvent[]): string {
-  const startEvent = events.find(e => e.type === 'session_start');
-  if (startEvent?.model) return startEvent.model as string;
-  const req = events.find(e => e.type === 'api_request' && e.model);
-  return (req?.model as string) ?? '';
-}
-
-function formatDate(iso: string) {
-  try {
-    return new Date(iso).toLocaleString('en-US', {
-      month: 'short', day: 'numeric', year: 'numeric',
-      hour: '2-digit', minute: '2-digit', second: '2-digit',
-    });
-  } catch {
-    return iso;
-  }
-}
-
-export default function SessionPage({ params }: PageProps) {
-  const { id } = use(params);
-  const [session, setSession] = useState<SessionDetail | null>(null);
+  const [data, setData] = useState<SessionDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [expandedEvents, setExpandedEvents] = useState<Set<number>>(new Set());
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        const res = await fetch(`${API_URL}/api/sessions/${id}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        setSession(data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load session');
-      } finally {
+    if (!id) return;
+    fetch(`${API_URL}/api/sessions/${id}`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((d) => {
+        setData(d);
         setLoading(false);
-      }
-    };
-    load();
+      })
+      .catch((e) => {
+        setError(e.message);
+        setLoading(false);
+      });
   }, [id]);
 
-  const toggleEvent = useCallback((index: number) => {
-    setExpandedEvents(prev => {
-      const next = new Set(prev);
-      if (next.has(index)) next.delete(index);
-      else next.add(index);
-      return next;
+  const handleCopyLink = useCallback(() => {
+    navigator.clipboard.writeText(window.location.href).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     });
   }, []);
 
-  const events = session?.events ?? [];
-  const totalCost = getTotalCost(events);
-  const model = session?.metadata?.model_used ?? getSessionModel(events);
-  const firstEvent = events[0];
-  const sessionDate = firstEvent?.timestamp ?? session?.metadata?.created_at ?? '';
+  const totalCost = data?.metadata?.total_cost_usd
+    ?? data?.events?.reduce((s, e) => s + (e.cost_usd ?? 0), 0)
+    ?? 0;
+
+  const totalTokens = data?.metadata?.total_tokens
+    ?? data?.events?.reduce((s, e) => s + (e.total_tokens ?? 0), 0)
+    ?? 0;
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f]">
+    <div className="min-h-screen bg-[#0a0a0f] text-white font-mono">
       {/* Sticky header */}
-      <div className="sticky top-0 z-50 bg-[#0a0a0f]/95 backdrop-blur-sm border-b border-gray-800">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 min-w-0">
-            <Link
-              href="/sessions"
-              className="text-gray-500 hover:text-gray-300 transition-colors shrink-0 text-sm flex items-center gap-1"
-            >
-              ← Sessions
-            </Link>
-            <span className="text-gray-700 shrink-0">/</span>
-            <span className="font-mono text-gray-400 text-sm truncate">{id.slice(0, 16)}…</span>
-          </div>
-          <div className="flex items-center gap-3 shrink-0">
-            {!loading && session && (
-              <>
-                <span className="text-sm text-gray-500 hidden sm:block">
-                  Total cost:{' '}
-                  <CostBadge cost={totalCost} />
+      <div className="sticky top-0 z-10 bg-[#0a0a0f]/95 backdrop-blur border-b border-white/10">
+        <div className="max-w-6xl mx-auto px-6 py-3 flex items-center gap-4">
+          <Link
+            href="/sessions"
+            className="text-gray-500 hover:text-white transition-colors text-sm shrink-0"
+          >
+            ← Back
+          </Link>
+
+          <span className="text-white/20">|</span>
+
+          <span className="text-gray-400 text-sm truncate flex-1 font-mono">
+            {data?.metadata?.name || id}
+          </span>
+
+          {/* Stats */}
+          {!loading && !error && (
+            <div className="flex items-center gap-4 shrink-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-gray-600 text-xs font-sans">Cost:</span>
+                <span className="text-[#00c853] text-sm font-bold">
+                  ${totalCost.toFixed(5)}
                 </span>
-                <ShareButton sessionId={id} />
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
-        {loading && (
-          <>
-            <div className="h-8 bg-gray-800 rounded w-64 mb-2 animate-pulse" />
-            <div className="h-4 bg-gray-800 rounded w-48 mb-8 animate-pulse" />
-            <LoadingSkeleton count={5} type="event" />
-          </>
-        )}
-
-        {error && (
-          <div className="bg-red-900/20 border border-red-700/40 rounded-xl p-6 text-center mt-8">
-            <p className="text-red-400 font-semibold mb-1">Failed to load session</p>
-            <p className="text-red-500/70 text-sm">{error}</p>
-            <Link href="/sessions" className="text-[#7c4dff] hover:underline text-sm mt-3 inline-block">
-              ← Back to sessions
-            </Link>
-          </div>
-        )}
-
-        {!loading && session && (
-          <>
-            {/* Session meta */}
-            <div className="mb-8">
-              <h1 className="text-2xl font-bold text-white mb-1 break-all">
-                {session.metadata?.name || `Session ${id.slice(0, 8)}`}
-              </h1>
-              <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500">
-                {sessionDate && <span>{formatDate(sessionDate)}</span>}
-                {model && <span className="font-mono text-blue-400">{model}</span>}
-                <span>{events.length} events</span>
-                <span>
-                  Total cost: <CostBadge cost={totalCost} />
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-gray-600 text-xs font-sans">Tokens:</span>
+                <span className="text-[#7c4dff] text-sm font-bold">
+                  {totalTokens.toLocaleString()}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-gray-600 text-xs font-sans">Events:</span>
+                <span className="text-[#ffab40] text-sm font-bold">
+                  {data?.events?.length ?? 0}
                 </span>
               </div>
             </div>
+          )}
 
-            {/* Timeline */}
-            {events.length === 0 ? (
-              <div className="text-center py-16 text-gray-600">No events in this session.</div>
-            ) : (
-              <div className="relative">
-                {events.map((event, i) => (
-                  <EventCard
-                    key={i}
-                    event={event}
-                    isExpanded={expandedEvents.has(i)}
-                    onToggle={() => toggleEvent(i)}
-                  />
-                ))}
-                {/* End cap for timeline */}
-                <div className="ml-1.25 w-px h-4 bg-transparent" />
-              </div>
-            )}
-          </>
+          <button
+            onClick={handleCopyLink}
+            className="shrink-0 text-xs text-gray-500 hover:text-white border border-white/10 hover:border-white/30 px-3 py-1.5 rounded transition-colors font-sans"
+          >
+            {copied ? '✓ Copied' : 'Copy link'}
+          </button>
+        </div>
+      </div>
+
+      <div className="max-w-6xl mx-auto px-6 py-6">
+        {/* Session metadata */}
+        {data?.metadata && (
+          <div className="grid grid-cols-4 gap-4 mb-6">
+            <div className="bg-[#13131a] border border-white/10 rounded-xl p-4">
+              <p className="text-gray-600 text-xs font-sans mb-1">Model</p>
+              <p className="text-white text-sm font-bold truncate">{data.metadata.model_used || '—'}</p>
+            </div>
+            <div className="bg-[#13131a] border border-white/10 rounded-xl p-4">
+              <p className="text-gray-600 text-xs font-sans mb-1">Duration</p>
+              <p className="text-white text-sm font-bold">
+                {data.metadata.duration_seconds < 60
+                  ? `${data.metadata.duration_seconds}s`
+                  : `${Math.floor(data.metadata.duration_seconds / 60)}m ${data.metadata.duration_seconds % 60}s`}
+              </p>
+            </div>
+            <div className="bg-[#13131a] border border-white/10 rounded-xl p-4">
+              <p className="text-gray-600 text-xs font-sans mb-1">Total cost</p>
+              <p className="text-[#00c853] text-sm font-bold">${data.metadata.total_cost_usd.toFixed(5)}</p>
+            </div>
+            <div className="bg-[#13131a] border border-white/10 rounded-xl p-4">
+              <p className="text-gray-600 text-xs font-sans mb-1">Created</p>
+              <p className="text-white text-sm font-bold">
+                {new Date(data.metadata.created_at).toLocaleString()}
+              </p>
+            </div>
+          </div>
         )}
-      </main>
+
+        {/* Loading */}
+        {loading && (
+          <div className="bg-[#13131a] border border-white/10 rounded-xl overflow-hidden">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="px-6 py-4 border-b border-white/5 animate-pulse flex gap-3">
+                <div className="h-4 w-24 bg-white/10 rounded"></div>
+                <div className="h-4 w-20 bg-white/10 rounded"></div>
+                <div className="h-4 flex-1 bg-white/10 rounded"></div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Error */}
+        {error && (
+          <div className="bg-red-950/50 border border-red-800/50 rounded-xl p-6 text-center">
+            <p className="text-red-400 font-sans text-sm mb-1">Failed to load session</p>
+            <p className="text-red-600 font-mono text-xs">{error}</p>
+          </div>
+        )}
+
+        {/* Timeline */}
+        {!loading && !error && data && (
+          <div className="bg-[#13131a] border border-white/10 rounded-xl overflow-hidden">
+            {/* Timeline header */}
+            <div className="flex items-center gap-3 px-6 py-3 bg-[#0d0d14] border-b border-white/10">
+              <span className="text-gray-600 text-xs w-28">TIME</span>
+              <span className="text-gray-600 text-xs w-28">TYPE</span>
+              <span className="text-gray-600 text-xs flex-1">DETAILS</span>
+              <span className="text-gray-600 text-xs">COST / TOKENS</span>
+            </div>
+
+            {data.events.length === 0 ? (
+              <div className="py-16 text-center text-gray-600 font-sans text-sm">
+                No events recorded in this session.
+              </div>
+            ) : (
+              data.events.map((event, i) => (
+                <EventRow key={i} event={event} index={i} />
+              ))
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
