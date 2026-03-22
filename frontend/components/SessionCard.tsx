@@ -29,12 +29,14 @@ export default function SessionCard({ session }: SessionCardProps) {
   const inputTokens = Math.round(session.total_tokens * 0.7);
   const outputTokens = session.total_tokens - inputTokens;
 
+  const sid = session.session_id || session.id || '';
+
   return (
-    <Link href={`/s/${session.id}`} className="block group">
+    <Link href={`/s/${sid}`} className="block group">
       <div className="bg-[#12121a] border border-gray-800 rounded-xl p-5 transition-all hover:border-[#7c4dff] hover:shadow-lg hover:shadow-purple-900/20">
         <div className="flex justify-between items-start mb-2">
           <h3 className="font-semibold text-white text-lg truncate max-w-[60%] group-hover:text-[#7c4dff] transition-colors">
-            {session.name || `Session ${session.id.slice(0, 8)}`}
+            {session.name || `Session ${sid.slice(0, 8)}`}
           </h3>
           <CostBadge cost={session.total_cost_usd} />
         </div>

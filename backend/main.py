@@ -223,14 +223,15 @@ app.add_middleware(
     allow_origins=[
         FRONTEND_URL,
         "https://agentlens.vercel.app",
-        "https://*.vercel.app",
         "http://localhost:3000",
         "http://localhost:3001",
-        "*",  # MVP: allow all
+        "http://localhost:3010",
+        "http://localhost:3011",
+        "http://217.114.5.77:3011",
     ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=False,  # no cookies/auth, no need for credentials
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Accept"],
 )
 
 
@@ -297,17 +298,26 @@ def session_to_summary(row: sqlite3.Row) -> dict:
 @app.post("/api/sessions", status_code=201)
 async def upload_session(file: UploadFile = File(...)):
     """Upload a JSONL session file, parse events, store metadata."""
-    # Size check
-    content = await file.read()
-    if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=413,
-            detail={
-                "error": "file_too_large",
-                "message": "Session file exceeds maximum size of 10MB",
-                "details": {"max_bytes": MAX_FILE_SIZE, "received_bytes": len(content)},
-            },
-        )
+    # Content-type validation
+    if file.content_type and file.content_type not in (
+        "application/jsonl", "application/x-ndjson", "text/plain",
+        "application/octet-stream", "application/json"
+    ):
+        raise HTTPException(status_code=400, detail={"error": "invalid_content_type", "message": "Expected JSONL file"})
+
+    # Size check via Content-Length BEFORE reading to prevent memory DoS
+    # Read with size limit using chunked approach
+    chunks = []
+    total_size = 0
+    async for chunk in file:  # type: ignore[attr-defined]
+        total_size += len(chunk)
+        if total_size > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail={"error": "file_too_large", "message": "Session file exceeds maximum size of 10MB"},
+            )
+        chunks.append(chunk)
+    content = b"".join(chunks)
 
     # Parse JSONL
     try:
@@ -489,8 +499,21 @@ async def list_sessions(
         conn.close()
 
 
+def _validate_session_id(session_id: str) -> str:
+    """Validate session_id is a safe UUID or alphanumeric ID to prevent path traversal."""
+    import re
+    if not re.match(r'^[a-zA-Z0-9_\-]{1,64}$', session_id):
+        raise HTTPException(status_code=400, detail={"error": "invalid_session_id", "message": "Invalid session ID format"})
+    # Ensure resolved path stays within sessions dir
+    resolved = (SESSIONS_DIR / f"{session_id}.jsonl").resolve()
+    if not str(resolved).startswith(str(SESSIONS_DIR.resolve())):
+        raise HTTPException(status_code=400, detail={"error": "invalid_session_id", "message": "Invalid session ID"})
+    return session_id
+
+
 @app.get("/api/sessions/{session_id}")
 async def get_session(session_id: str):
+    session_id = _validate_session_id(session_id)
     """Get a single session with all parsed events."""
     conn = get_db()
     try:
@@ -546,6 +569,7 @@ async def get_session(session_id: str):
 @app.get("/api/sessions/{session_id}/raw")
 async def get_session_raw(session_id: str):
     """Download the raw JSONL file for a session."""
+    session_id = _validate_session_id(session_id)
     conn = get_db()
     try:
         row = conn.execute(
@@ -580,6 +604,7 @@ async def get_session_raw(session_id: str):
 @app.delete("/api/sessions/{session_id}")
 async def delete_session(session_id: str):
     """Delete a session and its JSONL file."""
+    session_id = _validate_session_id(session_id)
     conn = get_db()
     try:
         row = conn.execute(

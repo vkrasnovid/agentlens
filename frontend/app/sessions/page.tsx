@@ -159,19 +159,21 @@ export default function SessionsPage() {
         {/* Session cards */}
         {!loading && !error && sessions.length > 0 && (
           <div className="space-y-4">
-            {sessions.map((session) => (
+            {sessions.map((session) => {
+              const sid = session.session_id || session.id || '';
+              return (
               <Link
-                key={session.id}
-                href={`/s/${session.id}`}
+                key={sid}
+                href={`/s/${sid}`}
                 className="block bg-[#13131a] border border-white/10 hover:border-[#7c4dff]/40 rounded-xl p-5 transition-all hover:bg-[#16161f] group"
               >
                 <div className="flex items-start justify-between mb-4">
                   <div>
                     <h3 className="text-white font-bold group-hover:text-[#7c4dff] transition-colors">
-                      {session.name || session.id}
+                      {session.name || sid}
                     </h3>
                     <p className="text-gray-600 text-xs mt-0.5 font-sans">
-                      {session.id}
+                      {sid}
                     </p>
                   </div>
                   <div className="text-right">
@@ -211,7 +213,8 @@ export default function SessionsPage() {
                   </div>
                 </div>
               </Link>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
